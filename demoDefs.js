@@ -12,18 +12,18 @@ module.exports = [
      description: "optional stuff", // optional
      onSeen: function(hotplugdata,info) { 
      	 console.log("Found an Insteon modem");
-         console.log("This is info on the newly attached device: " + JSON.stringify(hotplugdata));
+         console.log("This is info on the attached/detached device: " + JSON.stringify(hotplugdata));
          console.log("This is platform: " + info.platform); 
          return "uniqueid-for-this-device"; // return a string which is unique to this device. If this device is unplugged, and plugged
                                             // back in, this string should be the same
      },
      onNew: function(hotplugdata,uuid,info) {
-     	console.log("Insteon modem - onNew()");
+     	console.log(">>>>>>>>>>>>>>> Insteon modem - onNew() You should only see me once on plug-in ("+uuid+") <<<<<<<<<<<<<<<<<<<< ");
      },
-     onRemove: function(hotplugdata, info) {
-         console.log("This is info on the removed device: " + JSON.stringify(hotplugdata));
+     onRemove: function(hotplugdata,uuid,info) {
+     	console.log(">>>>>>>>>>>>>>> Insteon modem - onRemove() You should only see me once on plug-in ("+uuid+") <<<<<<<<<<<<<<<<<<<< ");     	
      },
-     onChange: function(hotplugdata_before, hotplugdata_after, info) {
+     onChange: function(hotplugdata_before, hotplugdata_after, uuid,info) {
          console.log("This is info on the changed device: " + JSON.stringify(hotplugdata));
      }
 },
@@ -37,18 +37,18 @@ module.exports = [
      description: "optional stuff", // optional
      onSeen: function(hotplugdata,info) { 
      	 console.log("See a memory stick.");
-         console.log("This is info on the newly attached device: " + JSON.stringify(hotplugdata));
+         console.log("This is info on the attached/detached device: " + JSON.stringify(hotplugdata));
          console.log("This is platform: " + info.platform); 
-         return hotplugdata.ID_SERIAL; // return a string which is unique to this device. If this device is unplugged, and plugged
+         return hotplugdata.ID_SERIAL_SHORT; // return a string which is unique to this device. If this device is unplugged, and plugged
                                             // back in, this string should be the same
      },
      onNew: function(hotplugdata,uuid,info) {
      	console.log(">>>>>>>>>>>>>>> Sandisk memory - onNew() You should only see me once on plug-in ("+uuid+") <<<<<<<<<<<<<<<<<<<< ");
      },
-     onRemove: function(hotplugdata, info) {
-         console.log("This is info on the removed device: " + JSON.stringify(hotplugdata));
+     onRemove: function(hotplugdata,uuid,info) {
+     	console.log(">>>>>>>>>>>>>>> Sandisk memory - onRemove() You should only see me once on plug-in ("+uuid+") <<<<<<<<<<<<<<<<<<<< ");
      },
-     onChange: function(hotplugdata_before, hotplugdata_after, info) {
+     onChange: function(hotplugdata_before, hotplugdata_after, uuid, info) {
          console.log("This is info on the changed device: " + JSON.stringify(hotplugdata));
      }
 },
@@ -68,7 +68,7 @@ module.exports = [
                                             // back in, this string should be the same
      },
      onNew: function(hotplugdata,uuid,info) {
-     	console.log("YOU SHOULD NOT SEE THIS!!!");
+     	console.log("YOU SHOULD NOT SEE THIS!!! (uuid:" + uuid + ")");
      },
      onRemove: function(hotplugdata, info) {
          console.log("This is info on the removed device: " + JSON.stringify(hotplugdata));

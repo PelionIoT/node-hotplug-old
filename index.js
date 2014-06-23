@@ -29,7 +29,7 @@ var platform = detectOS();
 
 module.exports = {}
 
-var seenDevices = {};
+var catalogedDevices = {};
 var deviceTable = []; // pulled from a file, or an array handed
 var deviceIndex = {}; // built from file import
 var options = {};
@@ -104,7 +104,7 @@ if(platform == 'linux') {
 	    var ret = signatureTree.lookup(path);
 	    if(ret) {
 	    	if(options.verbose)
-	    		console.log("Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+	    		console.log("Add: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
 	    }
 
 	    if(deviceIndex[ret]) {
@@ -118,14 +118,14 @@ if(platform == 'linux') {
 	    	}
 
 	    	if(uuid) {
-	    		if(!seenDevices[uuid]) {
-	    			seenDevices[uuid] = device;
+	    		if(!catalogedDevices[uuid]) {
+	    			catalogedDevices[uuid] = device;
 	    			try {
-	    				deviceIndex[ret].onNew(device,uuid,{
+	    				deviceIndex[ret].onNew(catalogedDevices[uuid],uuid,{
 	    					platform: platform
 	    				});
 	    			} catch (e) {
-	    				console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+	    				console.error("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    			}
 	    		}
 	    	} else {
@@ -135,11 +135,100 @@ if(platform == 'linux') {
 	}
 
 	var _onRemove = function (device) {
-		console.log('removed ' + device);
+		if(options.verbose) {
+			console.log("Detected removed device.");
+			console.log('Info: ' + util.inspect(device));
+		}
+	    
+	    var path = []; // build lookup path
+	    for(var s=0;s<sortedFields.length;s++) {
+	    	path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
+	    }
+
+	    var ret = signatureTree.lookup(path);
+	    if(ret) {
+	    	if(options.verbose)
+	    		console.log("Remove: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+	    }
+	    if(deviceIndex[ret]) {
+	    	var uuid = null;
+	    	try {
+	    		uuid = deviceIndex[ret].onSeen(device,{
+	    			platform: platform
+	    		});
+	    	} catch (e) {
+	    		console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+	    	}
+
+	    	if(uuid) {
+	    		if(catalogedDevices[uuid]) {
+	    			try {
+	    				deviceIndex[ret].onRemove(catalogedDevices[uuid],uuid,{
+	    					platform: platform
+	    				});
+	    			} catch (e) {
+	    				console.error("Error in onRemove() handler for device: " + uuid + " --> " + e.message + e.stack);
+	    			}
+	    			if(options.verbose)
+	    				console.log("Removing uuid:"+uuid+" from table.");
+	    			delete catalogedDevices[uuid];
+	    		}
+	    	} else {
+	    		console.error("WARN: onSeen() for device returned a " + (typeof uuid));
+	    	}
+	    }
+
+
+
+
 	}
 
 	var _onChange = function (device) {
-		console.log('changed ' + device);
+		if(options.verbose) {
+			console.log("Detected change on device.");
+			console.log('Info: ' + util.inspect(device));
+		}
+	    
+	    var path = []; // build lookup path
+	    for(var s=0;s<sortedFields.length;s++) {
+	    	path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
+	    }
+
+	    var ret = signatureTree.lookup(path);
+	    if(ret) {
+	    	if(options.verbose)
+	    		console.log("Change: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+	    }
+	    if(deviceIndex[ret]) {
+	    	var uuid = null;
+	    	try {
+	    		uuid = deviceIndex[ret].onSeen(device,{
+	    			platform: platform
+	    		});
+	    	} catch (e) {
+	    		console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+	    	}
+
+	    	if(uuid) {
+	    		if(catalogedDevices[uuid]) {
+	    			var olddata = catalogedDevices[uuid];
+	    			catalogedDevices[uuid] = device;
+	    			try {
+	    				deviceIndex[ret].onChange(olddata,catalogedDevices[uuid],uuid,{
+	    					platform: platform
+	    				});
+	    			} catch (e) {
+	    				console.error("Error in onChange() handler for device: " + uuid + " --> " + e.message + e.stack);
+	    			}
+	    			if(options.verbose)
+	    				console.log("Removing uuid:"+uuid+" from table.");
+	    		}
+	    	} else {
+	    		console.error("WARN: onSeen() for device returned a " + (typeof uuid));
+	    	}
+	    }
+
+
 	}
 
 	/**
@@ -187,8 +276,10 @@ if(platform == 'linux') {
 			if(typeof options.hotplugDefs === 'string') {
 				loadDeviceTable(options.hotplugDefs,function(table){
 					deviceTable = table;
-					console.log("device table------------");
-					console.log(util.inspect(deviceTable));
+					if(options.verbose) {
+						console.log("device table------------");
+						console.log(util.inspect(deviceTable));
+					}
 					success = true;
 				},function(err){
 					success = false;
@@ -226,7 +317,7 @@ if(platform == 'linux') {
 		    	sortedFields.push([fieldnames[n], signatureFields[fieldnames[n]]])
 		    sortedFields.sort(function(a, b) {return a[1] - b[1]})
 
-		    console.log("Fields in order: " + util.inspect(sortedFields));
+//		    console.log("Fields in order: " + util.inspect(sortedFields));
 
 		    var devids = Object.keys(deviceIndex);
 		    for(var devn=0;devn<devids.length;devn++) {
@@ -235,7 +326,7 @@ if(platform == 'linux') {
 //		    		console.log("signature: " + util.inspect(deviceIndex[devids[devn]].signature));
 		    		path.push([sortedFields[s][0],deviceIndex[devids[devn]].signature[sortedFields[s][0]]]);
 		    	}
-		    	console.log("ADD item <" + devids[devn] + "> path: " + util.inspect(path));
+		    	if(options.verbose) console.log("ADD item <" + devids[devn] + "> path: " + util.inspect(path));
 		    	signatureTree.add(path,devids[devn]);
 		    }
 
@@ -279,6 +370,14 @@ if(platform == 'linux') {
 		_monitor.removeListener('change',_onChange);
 	}
 
+
+	/**
+	 * Returns an object of objects with all cataloged devices (Devices which an onNew() has been called on)
+	 * @return {[type]} [description]
+	 */
+	module.exports.getCatalog = function() {
+		return catalogedDevices;
+	}
 	/**
 	 * @method rawDeviceList
 	 * @return {object} returns a javascript object with a list of raw information on attached devices. OS-specific
@@ -290,11 +389,11 @@ if(platform == 'linux') {
 //////////////////////////////////////////// UNSUPPORTED
 
 	module.exports.start = function(options) {
-		console.log("platform " + platform + " currently unsupported!!!");
+		console.error("platform " + platform + " currently unsupported!!!");
 	}
 
 	module.exports.stop = function() {
-		console.log("platform " + platform + " currently unsupported!!!");
+		console.error("platform " + platform + " currently unsupported!!!");
 	}
 
 
