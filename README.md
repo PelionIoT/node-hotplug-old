@@ -2,6 +2,12 @@
 
 This is a hotplug system for node.js. It is in early development but is meant to handle all types of devices being plugged into or removed from a system. It is designed to be able to deal with a *large* database of 'signatures' relatively quickly.
 
+### Build directions
+
+    node-gyp configure
+    node-gyp build
+    
+If using devicejs use <code>node-gyp-dev</code> in the local node directory.
 
 ----
 
