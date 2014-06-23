@@ -87,7 +87,7 @@ if(platform == 'linux') {
 	// };
 
 
-	var _onAdd = function (device) {
+	var _onUdevAdd = function (device) {
 		if(options.verbose) {
 			console.log("Detected new device.");
 			console.log('Info: ' + util.inspect(device));
@@ -134,7 +134,7 @@ if(platform == 'linux') {
 	    }
 	}
 
-	var _onRemove = function (device) {
+	var _onUdevRemove = function (device) {
 		if(options.verbose) {
 			console.log("Detected removed device.");
 			console.log('Info: ' + util.inspect(device));
@@ -183,7 +183,7 @@ if(platform == 'linux') {
 
 	}
 
-	var _onChange = function (device) {
+	var _onUdevChange = function (device) {
 		if(options.verbose) {
 			console.log("Detected change on device.");
 			console.log('Info: ' + util.inspect(device));
@@ -333,9 +333,9 @@ if(platform == 'linux') {
 		}
 
 		if(success) {
-			_monitor.on('add', _onAdd );
-			_monitor.on('remove', _onRemove );
-			_monitor.on('change', _onChange );
+			_monitor.on('add', _onUdevAdd );
+			_monitor.on('remove', _onUdevRemove );
+			_monitor.on('change', _onUdevChange );
 			successcb();
 ///////////
 			// console.log("test.....");
@@ -365,9 +365,9 @@ if(platform == 'linux') {
 	 * @return {[type]} [description]
 	 */
 	module.exports.stop = function() {
-		_monitor.removeListener('add',_onAdd);
-		_monitor.removeListener('remove',_onRemove);
-		_monitor.removeListener('change',_onChange);
+		_monitor.removeListener('add',_onUdevAdd);
+		_monitor.removeListener('remove',_onUdevRemove);
+		_monitor.removeListener('change',_onUdevChange);
 	}
 
 
@@ -378,11 +378,73 @@ if(platform == 'linux') {
 	module.exports.getCatalog = function() {
 		return catalogedDevices;
 	}
+
+
+	/**
+	 * This asks the hotlplug system to scan for new devices. Useful on program startup and so forth. Will not detect a removal, only new stuff.
+	 * @return {[type]} [description]
+	 */
+	module.exports.scanForDevices = function() {
+		var udevlist = udev.list();
+		if(options.verbose) {
+			console.log("list from udev ------------>");
+			console.log(util.inspect(udevlist));			
+			console.log("<---------------------------");
+		}
+
+		for(var N=0;N<udevlist.length;N++) {
+			var path = [];
+			var device = udevlist[N];
+
+			for(var s=0;s<sortedFields.length;s++) {
+	//	    	console.log("signature: " + util.inspect(device));
+	//	        console.log("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
+	            path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
+	        }
+   	        //	console.log("items for new fields: " + util.inspect(path));
+
+   	        var ret = signatureTree.lookup(path);
+   	        if(ret) {
+   	        	if(options.verbose)
+   	        		console.log("Scan: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+   	        }
+
+   	        if(deviceIndex[ret]) {
+   	        	var uuid = null;
+   	        	try {
+   	        		uuid = deviceIndex[ret].onSeen(device,{
+   	        			platform: platform
+   	        		});
+   	        	} catch (e) {
+   	        		console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+   	        	}
+
+   	        	if(uuid) {
+   	        		if(!catalogedDevices[uuid]) {
+   	        			catalogedDevices[uuid] = device;
+   	        			try {
+   	        				deviceIndex[ret].onNew(catalogedDevices[uuid],uuid,{
+   	        					platform: platform
+   	        				});
+   	        			} catch (e) {
+   	        				console.error("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
+   	        			}
+   	        		}
+   	        	} else {
+   	        		console.error("WARN: onSeen() for device returned a " + (typeof uuid));
+   	        	}
+   	        }
+
+   	    }
+
+	}
+
+
 	/**
 	 * @method rawDeviceList
 	 * @return {object} returns a javascript object with a list of raw information on attached devices. OS-specific
 	 */
-    module.exports.rawDeviceList = udev.list;
+//    module.exports.rawDeviceList = _monitor.list;
 
 ////////////////////////////////////////////
 } else {

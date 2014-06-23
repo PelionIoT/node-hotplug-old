@@ -4,8 +4,10 @@ var util = require('util');
 
 var deffile = "demoDefs.js";
 
-hotplug.start({ hotplugDefs: deffile, verbose: false },function() {
+hotplug.start({ hotplugDefs: deffile, verbose: true },function() {
 	console.log("Loaded. Success.");
+
+	hotplug.scanForDevices();	
 },function() {
 	console.log("Error loading hotplugDefs. " + JSON.stringify(arguments));
 });
@@ -16,6 +18,7 @@ setInterval(function(){
 	console.log(util.inspect(hotplug.getCatalog()));
 	console.log("----------- CATALOG END -------------------------");
 },10000); // every 10 seconds
+
 
 
 //var monitor = hotplug.monitor();
