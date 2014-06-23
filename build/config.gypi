@@ -31,8 +31,8 @@
     "v8_enable_gdbjit": 0,
     "v8_no_strict_aliasing": 1,
     "v8_use_snapshot": "true",
-    "nodedir": "/home/ed/.node-gyp/0.10.24",
-    "copy_dev_lib": "true",
+    "nodedir": "/home/ed/work/devicejs/node/deps/npm/bin/node-gyp-bin/../../../../",
+    "copy_dev_lib": "false",
     "standalone_static_library": 1
   }
 }
