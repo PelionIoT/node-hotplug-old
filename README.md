@@ -1,4 +1,13 @@
-# node-udev - list devices in system and detect changes on them
+# node-hotplug
+
+This is a hotplug system for node.js. It is in early development but is meant to handle all types of devices being plugged into or removed from a system. It is designed to be able to deal with a *large* database of 'signatures' relatively quickly.
+
+
+----
+
+Original projects this is based on:
+
+## node-udev - list devices in system and detect changes on them
 
 This library attempts to follow the libudev where it makes sense. I only needed some usb input device detection so I was happy with quite few features.
 
