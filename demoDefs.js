@@ -44,8 +44,10 @@ module.exports = [
      },
      onNew: function(hotplugdata,uuid,info) {
      	console.log(">>>>>>>>>>>>>>> Sandisk memory - onNew() You should only see me once on plug-in ("+uuid+") <<<<<<<<<<<<<<<<<<<< ");
+        hotplugdata.SAVE_NEW_INFO="xyz";
      },
      onRemove: function(hotplugdata,uuid,info) {
+        log.debug("retrieve old info: " + hotplugdata.SAVE_NEW_INFO);
      	console.log(">>>>>>>>>>>>>>> Sandisk memory - onRemove() You should only see me once on plug-in ("+uuid+") <<<<<<<<<<<<<<<<<<<< ");
      },
      onChange: function(hotplugdata_before, hotplugdata_after, uuid, info) {
