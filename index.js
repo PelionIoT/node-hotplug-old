@@ -19,11 +19,24 @@ var detectOS = function() {
 		return 'linux';
 	else
 		return 'notsupportedyet';
-	// console.log("platform: " + OS.platform());
-	// console.log("type: " + OS.type());
-	// console.log("release: " + OS.type());
-	// console.log("arch: " + OS.arch());
+	// logHotplugInfo("platform: " + OS.platform());
+	// logHotplugInfo("type: " + OS.type());
+	// logHotplugInfo("release: " + OS.type());
+	// logHotplugInfo("arch: " + OS.arch());
 }
+
+var logHotplugError = function() {	
+	var p = Array.prototype.slice.apply(arguments);
+	p.unshift("node-hotplug: ");
+	console.error.apply(console,p);
+}
+
+var logHotplugInfo = function() {
+	var p = Array.prototype.slice.apply(arguments);
+	p.unshift("node-hotplug: ");
+	console.info.apply(console,p);
+}
+
 
 var platform = detectOS();
 
@@ -56,17 +69,21 @@ var loadDeviceTable = function(path, successcb, errorcb) {
 		if(exists) stat = FS.statSync(realpath);
 		if(!exists || !stat || !stat.isFile()) {
 			errorcb("Could not find file: " + path);
+			if(options.verbose) logHotplugError("Could not find file: " + path);
 			return false;
 		}
-	} else 
+	} else if (realpath.charAt(0) != '/') {
 	    realpath = cwd + '/' + realpath;
+	}
 	try {
 		table = require(realpath);
 		if(typeof table !== 'object') {
 			errorcb("Exports from " + realpath + " did not return an object.");
+			if(options.verbose) logHotplugError("Exports from " + realpath + " did not return an object.");
 			return false;
 		}
 	} catch(e) {
+		if(options.verbose) logHotplugError("Error on require() of device table: " + e.message + " --> " + e.stack);
 		errorcb("Error on require() of device table: " + e.message + " --> " + e.stack);
 		return false;
 	}
@@ -89,22 +106,22 @@ if(platform == 'linux') {
 
 	var _onUdevAdd = function (device) {
 		if(options.verbose) {
-			console.log("Detected new device.");
-			console.log('Info: ' + util.inspect(device));
+			logHotplugInfo("Detected new device.");
+			logHotplugInfo('Info: ' + util.inspect(device));
 		}
 
 	    var path = [];
 	    for(var s=0;s<sortedFields.length;s++) {
-//	    	console.log("signature: " + util.inspect(device));
-//	        console.log("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
+//	    	logHotplugInfo("signature: " + util.inspect(device));
+//	        logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
 	    	path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
 	    }
-//	    console.log("items for new fields: " + util.inspect(path));
+//	    logHotplugInfo("items for new fields: " + util.inspect(path));
 
 	    var ret = signatureTree.lookup(path);
 	    if(ret) {
 	    	if(options.verbose)
-	    		console.log("Add: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+	    		logHotplugInfo("Add: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
 	    }
 
 	    if(deviceIndex[ret]) {
@@ -114,7 +131,7 @@ if(platform == 'linux') {
 	    			platform: platform
 	    		});
 	    	} catch (e) {
-	    		console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+	    		logHotplugError("Error in onSeen() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    	}
 
 	    	if(uuid) {
@@ -125,19 +142,19 @@ if(platform == 'linux') {
 	    					platform: platform
 	    				});
 	    			} catch (e) {
-	    				console.error("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
+	    				logHotplugError("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    			}
 	    		}
 	    	} else {
-	    		console.error("WARN: onSeen() for device returned a " + (typeof uuid));
+	    		logHotplugError("WARN: onSeen() for device returned a " + (typeof uuid));
 	    	}
 	    }
 	}
 
 	var _onUdevRemove = function (device) {
 		if(options.verbose) {
-			console.log("Detected removed device.");
-			console.log('Info: ' + util.inspect(device));
+			logHotplugInfo("Detected removed device.");
+			logHotplugInfo('Info: ' + util.inspect(device));
 		}
 	    
 	    var path = []; // build lookup path
@@ -148,7 +165,7 @@ if(platform == 'linux') {
 	    var ret = signatureTree.lookup(path);
 	    if(ret) {
 	    	if(options.verbose)
-	    		console.log("Remove: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+	    		logHotplugInfo("Remove: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
 	    }
 	    if(deviceIndex[ret]) {
 	    	var uuid = null;
@@ -157,7 +174,7 @@ if(platform == 'linux') {
 	    			platform: platform
 	    		});
 	    	} catch (e) {
-	    		console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+	    		logHotplugError("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
 	    	}
 
 	    	if(uuid) {
@@ -167,14 +184,14 @@ if(platform == 'linux') {
 	    					platform: platform
 	    				});
 	    			} catch (e) {
-	    				console.error("Error in onRemove() handler for device: " + uuid + " --> " + e.message + e.stack);
+	    				logHotplugError("Error in onRemove() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    			}
 	    			if(options.verbose)
-	    				console.log("Removing uuid:"+uuid+" from table.");
+	    				logHotplugInfo("Removing uuid:"+uuid+" from table.");
 	    			delete catalogedDevices[uuid];
 	    		}
 	    	} else {
-	    		console.error("WARN: onSeen() for device returned a " + (typeof uuid));
+	    		logHotplugError("WARN: onSeen() for device returned a " + (typeof uuid));
 	    	}
 	    }
 
@@ -185,8 +202,8 @@ if(platform == 'linux') {
 
 	var _onUdevChange = function (device) {
 		if(options.verbose) {
-			console.log("Detected change on device.");
-			console.log('Info: ' + util.inspect(device));
+			logHotplugInfo("Detected change on device.");
+			logHotplugInfo('Info: ' + util.inspect(device));
 		}
 	    
 	    var path = []; // build lookup path
@@ -197,7 +214,7 @@ if(platform == 'linux') {
 	    var ret = signatureTree.lookup(path);
 	    if(ret) {
 	    	if(options.verbose)
-	    		console.log("Change: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+	    		logHotplugInfo("Change: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
 	    }
 	    if(deviceIndex[ret]) {
 	    	var uuid = null;
@@ -206,7 +223,7 @@ if(platform == 'linux') {
 	    			platform: platform
 	    		});
 	    	} catch (e) {
-	    		console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+	    		logHotplugError("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
 	    	}
 
 	    	if(uuid) {
@@ -218,13 +235,13 @@ if(platform == 'linux') {
 	    					platform: platform
 	    				});
 	    			} catch (e) {
-	    				console.error("Error in onChange() handler for device: " + uuid + " --> " + e.message + e.stack);
+	    				logHotplugError("Error in onChange() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    			}
 	    			if(options.verbose)
-	    				console.log("Removing uuid:"+uuid+" from table.");
+	    				logHotplugInfo("Removing uuid:"+uuid+" from table.");
 	    		}
 	    	} else {
-	    		console.error("WARN: onSeen() for device returned a " + (typeof uuid));
+	    		logHotplugError("WARN: onSeen() for device returned a " + (typeof uuid));
 	    	}
 	    }
 
@@ -277,8 +294,8 @@ if(platform == 'linux') {
 				loadDeviceTable(options.hotplugDefs,function(table){
 					deviceTable = table;
 					if(options.verbose) {
-						console.log("device table------------");
-						console.log(util.inspect(deviceTable));
+						logHotplugInfo("device table------------");
+						logHotplugInfo(util.inspect(deviceTable));
 					}
 					success = true;
 				},function(err){
@@ -306,9 +323,9 @@ if(platform == 'linux') {
 		    		}
 		    	} else {
 		    		if(deviceTable[n].name)
-		    			console.error("Entry for <" + deviceTable[n].name + "> has no signature info.");
+		    			logHotplugError("Entry for <" + deviceTable[n].name + "> has no signature info.");
 		    		else
-		    			console.error("Bad entry in hotplug definitions");
+		    			logHotplugError("Bad entry in hotplug definitions");
 		    	}
 		    }
 
@@ -317,16 +334,16 @@ if(platform == 'linux') {
 		    	sortedFields.push([fieldnames[n], signatureFields[fieldnames[n]]])
 		    sortedFields.sort(function(a, b) {return a[1] - b[1]})
 
-//		    console.log("Fields in order: " + util.inspect(sortedFields));
+//		    logHotplugInfo("Fields in order: " + util.inspect(sortedFields));
 
 		    var devids = Object.keys(deviceIndex);
 		    for(var devn=0;devn<devids.length;devn++) {
 		    	var path = [];
 		    	for(var s=0;s<sortedFields.length;s++) {
-//		    		console.log("signature: " + util.inspect(deviceIndex[devids[devn]].signature));
+//		    		logHotplugInfo("signature: " + util.inspect(deviceIndex[devids[devn]].signature));
 		    		path.push([sortedFields[s][0],deviceIndex[devids[devn]].signature[sortedFields[s][0]]]);
 		    	}
-		    	if(options.verbose) console.log("ADD item <" + devids[devn] + "> path: " + util.inspect(path));
+		    	if(options.verbose) logHotplugInfo("ADD item <" + devids[devn] + "> path: " + util.inspect(path));
 		    	signatureTree.add(path,devids[devn]);
 		    }
 
@@ -338,7 +355,7 @@ if(platform == 'linux') {
 			_monitor.on('change', _onUdevChange );
 			successcb();
 ///////////
-			// console.log("test.....");
+			// logHotplugInfo("test.....");
 
 			// var lookup = [ [ 'ID_SERIAL', 'SanDisk_Cruzer_Glide_20044320321D5F9254FE-0:0' ],
 			// [ 'ID_MODEL_FROM_DATABASE', undefined ],
@@ -346,14 +363,14 @@ if(platform == 'linux') {
 			// [ 'ID_MODEL', 'Cruzer_Glide' ],
 			// [ 'ID_BUS', 'usb' ] ];
 
-			// console.log("Lookup: " + util.inspect(lookup));
+			// logHotplugInfo("Lookup: " + util.inspect(lookup));
    //          var ret = signatureTree.lookup(lookup);
 
    //          if(ret)
    //          {
-   //          	console.log("Found it. " + ret);
+   //          	logHotplugInfo("Found it. " + ret);
    //          } else
-   //          console.log("not found.");
+   //          logHotplugInfo("not found.");
 ///////////////
 		} else {
 			failurecb("No hotplugDefs.");
@@ -387,9 +404,9 @@ if(platform == 'linux') {
 	module.exports.scanForDevices = function() {
 		var udevlist = udev.list();
 		if(options.verbose) {
-			console.log("list from udev ------------>");
-			console.log(util.inspect(udevlist));			
-			console.log("<---------------------------");
+			logHotplugInfo("list from udev ------------>");
+			logHotplugInfo(util.inspect(udevlist));			
+			logHotplugInfo("<---------------------------");
 		}
 
 		for(var N=0;N<udevlist.length;N++) {
@@ -397,16 +414,16 @@ if(platform == 'linux') {
 			var device = udevlist[N];
 
 			for(var s=0;s<sortedFields.length;s++) {
-	//	    	console.log("signature: " + util.inspect(device));
-	//	        console.log("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
+	//	    	logHotplugInfo("signature: " + util.inspect(device));
+	//	        logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
 	            path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
 	        }
-   	        //	console.log("items for new fields: " + util.inspect(path));
+   	        //	logHotplugInfo("items for new fields: " + util.inspect(path));
 
    	        var ret = signatureTree.lookup(path);
    	        if(ret) {
    	        	if(options.verbose)
-   	        		console.log("Scan: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
+   	        		logHotplugInfo("Scan: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
    	        }
 
    	        if(deviceIndex[ret]) {
@@ -416,7 +433,7 @@ if(platform == 'linux') {
    	        			platform: platform
    	        		});
    	        	} catch (e) {
-   	        		console.error("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
+   	        		logHotplugError("Error in handler for device: " + uuid + " --> " + e.message + e.stack);
    	        	}
 
    	        	if(uuid) {
@@ -427,11 +444,11 @@ if(platform == 'linux') {
    	        					platform: platform
    	        				});
    	        			} catch (e) {
-   	        				console.error("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
+   	        				logHotplugError("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
    	        			}
    	        		}
    	        	} else {
-   	        		console.error("WARN: onSeen() for device returned a " + (typeof uuid));
+   	        		logHotplugError("WARN: onSeen() for device returned a " + (typeof uuid));
    	        	}
    	        }
 
@@ -451,11 +468,11 @@ if(platform == 'linux') {
 //////////////////////////////////////////// UNSUPPORTED
 
 	module.exports.start = function(options) {
-		console.error("platform " + platform + " currently unsupported!!!");
+		logHotplugError("platform " + platform + " currently unsupported!!!");
 	}
 
 	module.exports.stop = function() {
-		console.error("platform " + platform + " currently unsupported!!!");
+		logHotplugError("platform " + platform + " currently unsupported!!!");
 	}
 
 
@@ -463,3 +480,9 @@ if(platform == 'linux') {
 ////////////////////////////////////////////
 }
 
+module.exports.setErrorLogFunc = function(f) {
+	logHotplugError = f;
+}
+module.exports.setInfoLogFunc = function(f) {
+	logHotplugInfo = f;
+}
