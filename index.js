@@ -13,6 +13,11 @@ var util = require('util');
 var uuid = require('node-uuid');
 var Tree = require('./signatureTree');
 
+
+var _overrideOnNewCB = null;
+var _overrideOnRemoveCB = null;
+var _overrideOnChangeCB = null;
+
 var detectOS = function() {
 	var platform = OS.platform();
 	if (/^linux/.test(platform))
@@ -46,6 +51,8 @@ var catalogedDevices = {};
 var deviceTable = []; // pulled from a file, or an array handed
 var deviceIndex = {}; // built from file import
 var options = {};
+
+var signatureSets = [];
 
 var signatureTree = new Tree();
 var sortedFields = [];
@@ -113,7 +120,7 @@ if(platform == 'linux') {
 	    var path = [];
 	    for(var s=0;s<sortedFields.length;s++) {
 //	    	logHotplugInfo("signature: " + util.inspect(device));
-//	        logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
+	        logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
 	    	path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
 	    }
 //	    logHotplugInfo("items for new fields: " + util.inspect(path));
@@ -124,12 +131,14 @@ if(platform == 'linux') {
 	    		logHotplugInfo("Add: Definition with matching signature found: (" + ret + ") " + deviceIndex[ret].name);
 	    }
 
+
 	    if(deviceIndex[ret]) {
+	    	var sigset = deviceIndex[ret].sigset;
 	    	var uuid = null;
 	    	try {
 	    		uuid = deviceIndex[ret].onSeen(device,{
 	    			platform: platform
-	    		});
+	    		},signatureSets[sigset]);
 	    	} catch (e) {
 	    		logHotplugError("Error in onSeen() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    	}
@@ -138,9 +147,13 @@ if(platform == 'linux') {
 	    		if(!catalogedDevices[uuid]) {
 	    			catalogedDevices[uuid] = device;
 	    			try {
-	    				deviceIndex[ret].onNew(catalogedDevices[uuid],uuid,{
-	    					platform: platform
-	    				});
+ 	    				if(_overrideOnNewCB)
+	    					_overrideOnNewCB.call(undefined,deviceIndex[ret],catalogedDevices[uuid],uuid,{
+	    						platform: platform },signatureSets[sigset]);
+	    				else
+	    					deviceIndex[ret].onNew(catalogedDevices[uuid],uuid,{
+	    						platform: platform
+	    					},signatureSets[sigset]);
 	    			} catch (e) {
 	    				logHotplugError("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    			}
@@ -180,9 +193,14 @@ if(platform == 'linux') {
 	    	if(uuid) {
 	    		if(catalogedDevices[uuid]) {
 	    			try {
-	    				deviceIndex[ret].onRemove(catalogedDevices[uuid],uuid,{
-	    					platform: platform
-	    				});
+	    				var sigset = deviceIndex[ret].sigset;
+	    				if(_overrideOnRemoveCB)
+	    					_overrideOnRemoveCB.call(undefined,deviceIndex[ret],catalogedDevices[uuid],uuid,{
+	    					platform: platform },signatureSets[sigset]);
+	    				else
+	    					deviceIndex[ret].onRemove(catalogedDevices[uuid],uuid,{
+	    						platform: platform
+	    					},signatureSets[sigset]);
 	    			} catch (e) {
 	    				logHotplugError("Error in onRemove() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    			}
@@ -231,9 +249,17 @@ if(platform == 'linux') {
 	    			var olddata = catalogedDevices[uuid];
 	    			catalogedDevices[uuid] = device;
 	    			try {
-	    				deviceIndex[ret].onChange(olddata,catalogedDevices[uuid],uuid,{
-	    					platform: platform
-	    				});
+	    				var sigset = deviceIndex[ret].sigset;
+	    				if(_overrideOnChangeCB)
+	    					_overrideOnChangeCB.call(undefined,olddata,deviceIndex[ret],catalogedDevices[uuid],uuid,{
+	    					platform: platform },signatureSets[sigset]);
+	    				else
+	    					deviceIndex[ret].onChange(olddate,catalogedDevices[uuid],uuid,{
+	    						platform: platform
+	    					},signatureSets[sigset]);
+	    				// deviceIndex[ret].onChange(olddata,catalogedDevices[uuid],uuid,{
+	    				// 	platform: platform
+	    				// });
 	    			} catch (e) {
 	    				logHotplugError("Error in onChange() handler for device: " + uuid + " --> " + e.message + e.stack);
 	    			}
@@ -292,10 +318,28 @@ if(platform == 'linux') {
 		if(options && options.hotplugDefs) {
 			if(typeof options.hotplugDefs === 'string') {
 				loadDeviceTable(options.hotplugDefs,function(table){
-					deviceTable = table;
+//					deviceTable = table;
+	                deviceTable = [];
+					for(var n=0;n<table.length;n++) {  // mash arrays into single dim array
+						if(util.isArray(table[n])) {
+							for(var z=0;z<table[n].length;z++) {
+								logHotplugInfo("Adding entry (2): " + table[n][z].name);
+								deviceTable.push(table[n][z]);
+							}
+						} else {
+							logHotplugInfo("Adding entry: " + table[n].name);
+						    deviceTable.push(table[n]);
+						}
+					}
 					if(options.verbose) {
 						logHotplugInfo("device table------------");
 						logHotplugInfo(util.inspect(deviceTable));
+					}
+					for(var n=0;n<deviceTable.length;n++) {
+						if(deviceTable[n].sigset) { // create signature set objects
+							console.log("Found sigset: " + deviceTable[n].sigset); 
+							signatureSets[deviceTable[n].sigset] = {};
+						}
 					}
 					success = true;
 				},function(err){
@@ -440,9 +484,17 @@ if(platform == 'linux') {
    	        		if(!catalogedDevices[uuid]) {
    	        			catalogedDevices[uuid] = device;
    	        			try {
-   	        				deviceIndex[ret].onNew(catalogedDevices[uuid],uuid,{
-   	        					platform: platform
-   	        				});
+
+   	        				if(_overrideOnNewCB)
+   	        					_overrideOnNewCB.call(undefined,deviceIndex[ret],catalogedDevices[uuid],uuid,{
+   	        						platform: platform });
+   	        				else
+   	        					deviceIndex[ret].onNew(catalogedDevices[uuid],uuid,{
+   	        						platform: platform
+   	        					});
+   	        				// deviceIndex[ret].onNew(catalogedDevices[uuid],uuid,{
+   	        				// 	platform: platform
+   	        				// });
    	        			} catch (e) {
    	        				logHotplugError("Error in onNew() handler for device: " + uuid + " --> " + e.message + e.stack);
    	        			}
@@ -479,6 +531,28 @@ if(platform == 'linux') {
     module.exports.rawDeviceList = function() { return {} };
 ////////////////////////////////////////////
 }
+
+
+
+/**
+ * lets you overrid behavior for when a device is considered new. THis is good if you have your own
+ * backend device instantiation system.
+ * @param  {Function} cb 
+ *
+ * onNew(hotplugdef,device,uuid,platform) { }
+ *
+ * @return {[type]}      [description]
+ */
+module.exports.overrideOnNew = function(cb) {
+	_overrideOnNewCB = cb;
+}
+module.exports.overrideOnRemove = function(cb) {
+	_overrideOnRemoveCB = cb;
+}
+module.exports.overrideOnChange = function(cb) {
+	_overrideOnChangeCB = cb;
+}
+
 
 module.exports.setErrorLogFunc = function(f) {
 	logHotplugError = f;

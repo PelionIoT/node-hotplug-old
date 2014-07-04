@@ -29,13 +29,16 @@ module.exports = [
 },
 {
      name: "Sandisk USB memory",
+     sigset: "A",  // SIGSET allows you to pass information amongs different signatures.
      signature: {  // one or more keys to look for in hotplug data. All keys must match. Can be value or regex
      	   "ID_MODEL_ENC" : /Cruzer.*/,
            "ID_MODEL": "Cruzer_Glide",
            "ID_BUS" : "usb"
      },
      description: "optional stuff", // optional
-     onSeen: function(hotplugdata,info) { 
+     onSeen: function(hotplugdata,info,sigset) {
+        sigset.hello = 1; // this valu could be shared with other signature in the sigset "A"... this is to help with coordination of multiple hotplug 
+                      // messages. For instance, a multipurpose USB device may actually create multiple hotplug events.
      	 console.log("See a memory stick.");
          console.log("This is info on the attached/detached device: " + JSON.stringify(hotplugdata));
          console.log("This is platform: " + info.platform); 
@@ -56,6 +59,7 @@ module.exports = [
 },
 {
      name: "NOT Sandisk USB memory",
+     sigset: "A",
      signature: {  // one or more keys to look for in hotplug data. All keys must match. Can be value or regex
      	   "ID_MODEL_ENC" : /Cruzer.*/,
            "ID_MODEL": "aslkdasjkldjaslkd",
@@ -63,10 +67,13 @@ module.exports = [
      },
      description: "optional stuff", // optional
      onSeen: function(hotplugdata,info) { 
-     	 console.log("Found a memory stick.");
-         console.log("This is info on the newly attached device: " + JSON.stringify(hotplugdata));
-         console.log("This is platform: " + info.platform); 
-         return "uniqueid-for-this-device"; // return a string which is unique to this device. If this device is unplugged, and plugged
+        if(sigset && sigset.hello == 1) {
+            console.log("Found test 'hello'");
+        }
+        console.log("Found a memory stick.");
+        console.log("This is info on the newly attached device: " + JSON.stringify(hotplugdata));
+        console.log("This is platform: " + info.platform); 
+        return "uniqueid-for-this-device"; // return a string which is unique to this device. If this device is unplugged, and plugged
                                             // back in, this string should be the same
      },
      onNew: function(hotplugdata,uuid,info) {
