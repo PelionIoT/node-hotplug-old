@@ -1,5 +1,7 @@
 #include <v8.h>
 #include <node.h>
+#include "grease_client.h"
+#include "nan.h"
 
 #include <libudev.h>
 
@@ -23,24 +25,28 @@ static void PushProperties(Local<Object> obj, struct udev_device* dev) {
     }
 }
 
-class Monitor : public node::ObjectWrap {
+class Monitor : public Nan::ObjectWrap {
     struct poll_struct {
-        Persistent<Object> monitor;
+        Nan::Persistent<v8::Object> monitor;
     };
-    public:
-    static void Init(Handle<Object> target) {
-        Local<FunctionTemplate> tpl = FunctionTemplate::New(New);
-        tpl->SetClassName(String::NewSymbol("Monitor"));
+public:
+    static Nan::Persistent<Function> constructor;
+
+    static void Init() {
+        Local<FunctionTemplate> tpl = Nan::New<v8::FunctionTemplate>(New);
+        tpl->SetClassName(Nan::New("Monitor").ToLocalChecked());
         tpl->InstanceTemplate()->SetInternalFieldCount(1);
-        tpl->PrototypeTemplate()->Set(String::NewSymbol("close"),
-            FunctionTemplate::New(Close)->GetFunction());
-        Persistent<Function> constructor = Persistent<Function>::New(tpl->GetFunction());
-        target->Set(String::NewSymbol("Monitor"), constructor);
+
+        tpl->PrototypeTemplate()->Set(Nan::New("close").ToLocalChecked(),
+            Nan::New<v8::FunctionTemplate>(Close)->GetFunction());
+
+        constructor.Reset(tpl->GetFunction());
     };
-    private:
+
+private:
     static void on_handle_close(uv_handle_t *handle) {
         poll_struct* data = (poll_struct*)handle->data;
-        data->monitor.Dispose();
+        data->monitor.Reset();
         delete data;
         delete handle;
     }
@@ -48,25 +54,29 @@ class Monitor : public node::ObjectWrap {
     static void on_handle_event(uv_poll_t* handle, int status, int events) {
         HandleScope scope;
         poll_struct* data = (poll_struct*)handle->data;
-        Monitor* wrapper = ObjectWrap::Unwrap<Monitor>(data->monitor);
+
+        Monitor* wrapper = Nan::ObjectWrap::Unwrap<Monitor>(Nan::New(data->monitor));
         udev_device* dev = udev_monitor_receive_device(wrapper->mon);
 
-        Local<Object> obj = Object::New();
-        obj->Set(String::NewSymbol("syspath"), String::New(udev_device_get_syspath(dev)));
+        Local<Object> obj = Nan::New<v8::Object>();
+        Nan::Set(obj, Nan::New("syspath").ToLocalChecked(), 
+            Nan::New(udev_device_get_syspath(dev)).ToLocalChecked());
         PushProperties(obj, dev);
 
-        TryCatch tc;
-        Local<Value> emit_v = data->monitor->Get(String::NewSymbol("emit"));
-        Local<Function> emit = Local<Function>::Cast(emit_v);
-        Local<Value> emitArgs[2];
-        emitArgs[0] = String::NewSymbol(udev_device_get_action(dev));
+        Nan::TryCatch tc;
+        Nan::MaybeLocal<Value> emit_v = Nan::Get(Nan::New(data->monitor), Nan::New("emit").ToLocalChecked());
+        Nan::MaybeLocal<v8::Function> emit = emit_v.ToLocalChecked();
+
+        v8::Local<v8::Value> emitArgs[2];
+        emitArgs[0] = Nan::New(udev_device_get_action(dev)).ToLocalChecked();
         emitArgs[1] = obj;
-        emit->Call(data->monitor, 2, emitArgs);
+        emit.ToLocalChecked()->Call(Nan::New(data->monitor), 2, emitArgs);
 
         udev_device_unref(dev);
-        if (tc.HasCaught()) node::FatalException(tc);
+        if (tc.HasCaught()) Nan::FatalException(tc);
     };
-    static Handle<Value> New(const Arguments& args) {
+
+    static NAN_METHOD(New) {
         HandleScope scope;
         uv_poll_t* handle;
         Monitor* obj = new Monitor();
@@ -74,29 +84,31 @@ class Monitor : public node::ObjectWrap {
         udev_monitor_enable_receiving(obj->mon);
         obj->fd = udev_monitor_get_fd(obj->mon);
         obj->poll_handle = handle = new uv_poll_t;
-        obj->Wrap(args.This());
+        obj->Wrap(info.This());
 
         poll_struct* data = new poll_struct;
-        data->monitor = Persistent<Object>::New(args.This());
+        data->monitor.Reset(info.This());
         handle->data = data;
         uv_poll_init(uv_default_loop(), obj->poll_handle, obj->fd);
         uv_poll_start(obj->poll_handle, UV_READABLE, on_handle_event);
-        return args.This();
+        return info.GetReturnValue().Set(info.This());
     };
-    static Handle<Value> Close(const Arguments& args) {
-        HandleScope scope;
-        Monitor* obj = ObjectWrap::Unwrap<Monitor>(args.This());
+
+    static NAN_METHOD(Close) {
+        Monitor* obj = Nan::ObjectWrap::Unwrap<Monitor>(info.This());
         uv_poll_stop(obj->poll_handle);
         uv_close((uv_handle_t*)obj->poll_handle, on_handle_close);
         udev_monitor_unref(obj->mon);
-        return scope.Close(Undefined());
     };
+
     uv_poll_t* poll_handle;
     udev_monitor* mon;
     int fd;
 };
 
-static Handle<Value> List(const Arguments& args) {
+Nan::Persistent<Function> Monitor::constructor;
+
+static NAN_METHOD(List) {
     HandleScope scope;
     Local<Array> list = Array::New();
 
@@ -123,17 +135,20 @@ static Handle<Value> List(const Arguments& args) {
     }
 
     udev_enumerate_unref(enumerate);
-
-    return scope.Close(list);
 }
 
-static void Init(Handle<Object> target) {
+static void Init(Handle<Object> exports, Handle<Object> module) {
     udev = udev_new();
     if (!udev) {
-        ThrowException(String::New("Can't create udev\n"));
+        Nan::ThrowError(Nan::New("Can't create udev\n").ToLocalChecked());
     }
-    target->Set(String::NewSymbol("list"),
-        FunctionTemplate::New(List)->GetFunction());
-    Monitor::Init(target);
+
+    Monitor::Init();
+
+    Nan::Set(exports, Nan::New("Monitor").ToLocalChecked(), 
+        Nan::New(Monitor::constructor));
+
+    Nan::Set(exports, Nan::New("list").ToLocalChecked(), 
+        Nan::GetFunction(Nan::New<FunctionTemplate>(List)).ToLocalChecked());
 }
 NODE_MODULE(udev, Init)
