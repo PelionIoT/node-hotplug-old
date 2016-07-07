@@ -18,9 +18,9 @@ static void PushProperties(Local<Object> obj, struct udev_device* dev) {
         name = udev_list_entry_get_name(entry);
         value = udev_list_entry_get_value(entry);
         if (value != NULL) {
-            obj->Set(String::New(name), String::New(value));
+            obj->Set(Nan::New(name).ToLocalChecked(), Nan::New(value).ToLocalChecked());
         } else {
-            obj->Set(String::New(name), Null());
+            obj->Set(Nan::New(name).ToLocalChecked(), Nan::Null());
         }
     }
 }
@@ -52,7 +52,6 @@ private:
     }
 
     static void on_handle_event(uv_poll_t* handle, int status, int events) {
-        HandleScope scope;
         poll_struct* data = (poll_struct*)handle->data;
 
         Monitor* wrapper = Nan::ObjectWrap::Unwrap<Monitor>(Nan::New(data->monitor));
@@ -64,20 +63,20 @@ private:
         PushProperties(obj, dev);
 
         Nan::TryCatch tc;
-        Nan::MaybeLocal<Value> emit_v = Nan::Get(Nan::New(data->monitor), Nan::New("emit").ToLocalChecked());
-        Nan::MaybeLocal<v8::Function> emit = emit_v.ToLocalChecked();
+
+        Local<Value> emit_v = Nan::New(data->monitor)->Get(Nan::New("emit").ToLocalChecked());
+        Nan::Callback emit(v8::Local<v8::Function>::Cast(emit_v));
 
         v8::Local<v8::Value> emitArgs[2];
         emitArgs[0] = Nan::New(udev_device_get_action(dev)).ToLocalChecked();
         emitArgs[1] = obj;
-        emit.ToLocalChecked()->Call(Nan::New(data->monitor), 2, emitArgs);
+        emit.Call(Nan::GetCurrentContext()->Global(), 2, emitArgs);
 
         udev_device_unref(dev);
         if (tc.HasCaught()) Nan::FatalException(tc);
     };
 
     static NAN_METHOD(New) {
-        HandleScope scope;
         uv_poll_t* handle;
         Monitor* obj = new Monitor();
         obj->mon = udev_monitor_new_from_netlink(udev, "udev");
@@ -109,8 +108,7 @@ private:
 Nan::Persistent<Function> Monitor::constructor;
 
 static NAN_METHOD(List) {
-    HandleScope scope;
-    Local<Array> list = Array::New();
+    Local<Array> list = Nan::New<Array>();
 
     struct udev_enumerate* enumerate;
     struct udev_list_entry* devices;
@@ -127,9 +125,9 @@ static NAN_METHOD(List) {
         const char *path;
         path = udev_list_entry_get_name(entry);
         dev = udev_device_new_from_syspath(udev, path);
-        Local<Object> obj = Object::New();
+        Local<Object> obj = Nan::New<Object>();
         PushProperties(obj, dev);
-        obj->Set(String::NewSymbol("syspath"), String::New(path));
+        obj->Set(Nan::New("syspath").ToLocalChecked(), Nan::New(path).ToLocalChecked());
         list->Set(i++, obj);
         udev_device_unref(dev);
     }
@@ -137,7 +135,10 @@ static NAN_METHOD(List) {
     udev_enumerate_unref(enumerate);
 }
 
-static void Init(Handle<Object> exports, Handle<Object> module) {
+static void InitAll(Handle<Object> exports, Handle<Object> module) {
+    INIT_GLOG;
+
+    GLOG_DEBUG("Init");
     udev = udev_new();
     if (!udev) {
         Nan::ThrowError(Nan::New("Can't create udev\n").ToLocalChecked());
@@ -151,4 +152,4 @@ static void Init(Handle<Object> exports, Handle<Object> module) {
     Nan::Set(exports, Nan::New("list").ToLocalChecked(), 
         Nan::GetFunction(Nan::New<FunctionTemplate>(List)).ToLocalChecked());
 }
-NODE_MODULE(udev, Init)
+NODE_MODULE(udev, InitAll)

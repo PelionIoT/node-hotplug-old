@@ -24,10 +24,10 @@ var detectOS = function() {
 		return 'linux';
 	else
 		return 'notsupportedyet';
-	// logHotplugInfo("platform: " + OS.platform());
-	// logHotplugInfo("type: " + OS.type());
-	// logHotplugInfo("release: " + OS.type());
-	// logHotplugInfo("arch: " + OS.arch());
+	logHotplugInfo("platform: " + OS.platform());
+	logHotplugInfo("type: " + OS.type());
+	logHotplugInfo("release: " + OS.type());
+	logHotplugInfo("arch: " + OS.arch());
 }
 
 var logHotplugError = function() {	
@@ -102,8 +102,7 @@ var loadDeviceTable = function(path, successcb, errorcb) {
 
 if(platform == 'linux') {
 ///////////////////////////////////////////// LINUX
-
-	var udev = require('./build/Release/udev');
+	var udev = require('./build/Release/udev.node');
 	udev.Monitor.prototype.__proto__ = EventEmitter.prototype;
 
 	// module.exports.monitor = function() { 
