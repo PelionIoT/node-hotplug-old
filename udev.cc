@@ -52,6 +52,11 @@ private:
     }
 
     static void on_handle_event(uv_poll_t* handle, int status, int events) {
+        GLOG_DEBUG("on_handle_event");
+
+        auto isolate = Isolate::GetCurrent();
+        HandleScope scope(isolate);
+
         poll_struct* data = (poll_struct*)handle->data;
 
         Monitor* wrapper = Nan::ObjectWrap::Unwrap<Monitor>(Nan::New(data->monitor));
@@ -64,19 +69,18 @@ private:
 
         Nan::TryCatch tc;
 
-        Local<Value> emit_v = Nan::New(data->monitor)->Get(Nan::New("emit").ToLocalChecked());
-        Nan::Callback emit(v8::Local<v8::Function>::Cast(emit_v));
-
         v8::Local<v8::Value> emitArgs[2];
         emitArgs[0] = Nan::New(udev_device_get_action(dev)).ToLocalChecked();
         emitArgs[1] = obj;
-        emit.Call(Nan::GetCurrentContext()->Global(), 2, emitArgs);
+        GLOG_DEBUG("action = %s", udev_device_get_action(dev));
+        wrapper->emit.Call(Nan::New(data->monitor), 2, emitArgs);
 
         udev_device_unref(dev);
         if (tc.HasCaught()) Nan::FatalException(tc);
     };
 
     static NAN_METHOD(New) {
+        GLOG_DEBUG("New");
         uv_poll_t* handle;
         Monitor* obj = new Monitor();
         obj->mon = udev_monitor_new_from_netlink(udev, "udev");
@@ -84,6 +88,13 @@ private:
         obj->fd = udev_monitor_get_fd(obj->mon);
         obj->poll_handle = handle = new uv_poll_t;
         obj->Wrap(info.This());
+
+        try {
+            Local<Value> emit_v = info.This()->Get(Nan::New("emit").ToLocalChecked());
+            obj->emit.SetFunction(v8::Local<v8::Function>::Cast(emit_v));
+        } catch(std::exception &e) {
+            Nan::ThrowTypeError("No emit function available on udev prototype");
+        }
 
         poll_struct* data = new poll_struct;
         data->monitor.Reset(info.This());
@@ -100,9 +111,11 @@ private:
         udev_monitor_unref(obj->mon);
     };
 
+private:
     uv_poll_t* poll_handle;
     udev_monitor* mon;
     int fd;
+    Nan::Callback emit;
 };
 
 Nan::Persistent<Function> Monitor::constructor;
@@ -133,6 +146,8 @@ static NAN_METHOD(List) {
     }
 
     udev_enumerate_unref(enumerate);
+
+    info.GetReturnValue().Set(list);
 }
 
 static void InitAll(Handle<Object> exports, Handle<Object> module) {

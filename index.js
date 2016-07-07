@@ -111,6 +111,9 @@ if(platform == 'linux') {
 
 
 	var _onUdevAdd = function (device) {
+
+		console.log("device = " + device);
+
 		if(options.verbose) {
 			logHotplugInfo("Detected new device.");
 			logHotplugInfo('Info: ' + util.inspect(device));
@@ -164,6 +167,8 @@ if(platform == 'linux') {
 	}
 
 	var _onUdevRemove = function (device) {
+		console.log("device = " + device);
+
 		if(options.verbose) {
 			logHotplugInfo("Detected removed device.");
 			logHotplugInfo('Info: ' + util.inspect(device));
@@ -218,6 +223,8 @@ if(platform == 'linux') {
 	}
 
 	var _onUdevChange = function (device) {
+		console.log("device = " + device);
+
 		if(options.verbose) {
 			logHotplugInfo("Detected change on device.");
 			logHotplugInfo('Info: ' + util.inspect(device));
@@ -392,7 +399,9 @@ if(platform == 'linux') {
 
 		}
 
+
 		if(success) {
+			console.log("adding on event callbacks");
 			_monitor.on('add', _onUdevAdd );
 			_monitor.on('remove', _onUdevRemove );
 			_monitor.on('change', _onUdevChange );
