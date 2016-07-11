@@ -1,8 +1,8 @@
 {
-  "name": "udev",
+  "name": "node-udev",
   "version": "0.1.0",
   "description": "Bindings to libudev",
-  "main": "udev.js",
+  "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "install": "node-gyp rebuild"
