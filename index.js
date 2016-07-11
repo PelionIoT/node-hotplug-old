@@ -30,7 +30,7 @@ var detectOS = function() {
 	logHotplugInfo("arch: " + OS.arch());
 }
 
-var logHotplugError = function() {	
+var logHotplugError = function() {
 	var p = Array.prototype.slice.apply(arguments);
 	p.unshift("node-hotplug: ");
 	console.error.apply(console,p);
@@ -67,23 +67,32 @@ var loadDeviceTable = function(path, successcb, errorcb) {
 
 	var cwd = process.cwd();
 
-	var exists = FS.existsSync(realpath);
-	var stat = null;
-	if(exists) stat = FS.statSync(realpath);
-	if(!exists || !stat || !stat.isFile()) {
-		realpath = "./" + realpath;
-		exists = FS.existsSync(realpath);
-		if(exists) stat = FS.statSync(realpath);
-		if(!exists || !stat || !stat.isFile()) {
-			errorcb("Could not find file: " + path);
-			if(options.verbose) logHotplugError("Could not find file: " + path);
-			return false;
-		}
-	} else if (realpath.charAt(0) != '/') {
-	    realpath = cwd + '/' + realpath;
-	}
 	try {
-		table = require(realpath);
+
+		if(typeof realpath !== 'object') {
+
+			var exists = FS.existsSync(realpath);
+			var stat = null;
+			if(exists) stat = FS.statSync(realpath);
+			if(!exists || !stat || !stat.isFile()) {
+				realpath = "./" + realpath;
+				exists = FS.existsSync(realpath);
+				if(exists) stat = FS.statSync(realpath);
+				if(!exists || !stat || !stat.isFile()) {
+					errorcb("Could not find file: " + path);
+					if(options.verbose) logHotplugError("Could not find file: " + path);
+					return false;
+				}
+			} else if (realpath.charAt(0) != '/') {
+			    realpath = cwd + '/' + realpath;
+			}
+
+			table = require(realpath);
+
+		} else {
+			table = realpath;
+		}
+
 		if(typeof table !== 'object') {
 			errorcb("Exports from " + realpath + " did not return an object.");
 			if(options.verbose) logHotplugError("Exports from " + realpath + " did not return an object.");
@@ -96,7 +105,7 @@ var loadDeviceTable = function(path, successcb, errorcb) {
 	}
 	successcb(table);
 	return true;
-} 
+}
 
 // initialize based on OS...
 
@@ -105,14 +114,12 @@ if(platform == 'linux') {
 	var udev = require('./build/Release/udev.node');
 	udev.Monitor.prototype.__proto__ = EventEmitter.prototype;
 
-	// module.exports.monitor = function() { 
-	// 	return new udev.Monitor(); 
+	// module.exports.monitor = function() {
+	// 	return new udev.Monitor();
 	// };
 
 
 	var _onUdevAdd = function (device) {
-
-		console.log("device = " + device);
 
 		if(options.verbose) {
 			logHotplugInfo("Detected new device.");
@@ -122,7 +129,7 @@ if(platform == 'linux') {
 	    var path = [];
 	    for(var s=0;s<sortedFields.length;s++) {
 //	    	logHotplugInfo("signature: " + util.inspect(device));
-	        logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
+	        //logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
 	    	path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
 	    }
 //	    logHotplugInfo("items for new fields: " + util.inspect(path));
@@ -167,13 +174,12 @@ if(platform == 'linux') {
 	}
 
 	var _onUdevRemove = function (device) {
-		console.log("device = " + device);
 
 		if(options.verbose) {
 			logHotplugInfo("Detected removed device.");
 			logHotplugInfo('Info: ' + util.inspect(device));
 		}
-	    
+
 	    var path = []; // build lookup path
 	    for(var s=0;s<sortedFields.length;s++) {
 	    	path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
@@ -223,13 +229,12 @@ if(platform == 'linux') {
 	}
 
 	var _onUdevChange = function (device) {
-		console.log("device = " + device);
 
 		if(options.verbose) {
 			logHotplugInfo("Detected change on device.");
 			logHotplugInfo('Info: ' + util.inspect(device));
 		}
-	    
+
 	    var path = []; // build lookup path
 	    for(var s=0;s<sortedFields.length;s++) {
 	    	path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
@@ -292,12 +297,12 @@ if(platform == 'linux') {
 	 *     name: "USB device",
 	 *     signature: {  // one or more keys to look for in hotplug data. All keys must match. Can be value or regex
 	 *           "ID_SERIAL" : "FTDI_FT232R_USB_UART_A901M8MU",
-	 *           "SOME_field" : /^FTDI.*L/                         // can also have RegExs   
+	 *           "SOME_field" : /^FTDI.*L/                         // can also have RegExs
 	 *     },
 	 *     description: "optional stuff", // optional
 	 *     onSeen: function(hotplugdata,info) {  // called when a new device is seen, coming in or leaving (note, this may mean the device is already added / dealt with)
 	 *         console.log("This is info on the newly attached device: " + JSON.stringify(hotplugdata));
-	 *         console.log("This is platform: " + info.platform); 
+	 *         console.log("This is platform: " + info.platform);
 	 *         return "uniqueid-for-this-device"; // return a string which is unique to this device. If this device is unplugged, and plugged
 	 *                                            // back in, this string should be the same
 	 *     },
@@ -315,14 +320,15 @@ if(platform == 'linux') {
 	 */
 	module.exports.start = function(opts,successcb,failurecb) {
 
-		var _monitor = new udev.Monitor(); 
+		var _monitor = new udev.Monitor();
 
 		var success = false;
 
 		mergeOptionsIn(opts);
 
 		if(options && options.hotplugDefs) {
-			if(typeof options.hotplugDefs === 'string') {
+			if(typeof options.hotplugDefs === 'string' ||
+			   typeof options.hotplugDefs === 'object') {
 				loadDeviceTable(options.hotplugDefs,function(table){
 //					deviceTable = table;
 	                deviceTable = [];
@@ -343,7 +349,7 @@ if(platform == 'linux') {
 					}
 					for(var n=0;n<deviceTable.length;n++) {
 						if(deviceTable[n].sigset) { // create signature set objects
-							console.log("Found sigset: " + deviceTable[n].sigset); 
+							console.log("Found sigset: " + deviceTable[n].sigset);
 							signatureSets[deviceTable[n].sigset] = {};
 						}
 					}
@@ -352,8 +358,8 @@ if(platform == 'linux') {
 					success = false;
 					failurecb(err);
 				});
-			} else if (typeof options.hotplugDefs === 'object') {
-				deviceTable = table;
+			// } else if (typeof options.hotplugDefs === 'object') {
+			// 	deviceTable = table;
 			} else {
 				success = false;
 				failurecb("Invalid hotplugDefs value. Need file name or object.");
@@ -393,7 +399,9 @@ if(platform == 'linux') {
 //		    		logHotplugInfo("signature: " + util.inspect(deviceIndex[devids[devn]].signature));
 		    		path.push([sortedFields[s][0],deviceIndex[devids[devn]].signature[sortedFields[s][0]]]);
 		    	}
-		    	if(options.verbose) logHotplugInfo("ADD item <" + devids[devn] + "> path: " + util.inspect(path));
+		    	if(options.verbose) {
+		    		logHotplugInfo("ADD item <" + devids[devn] + "> path: " + util.inspect(path));
+		    	}
 		    	signatureTree.add(path,devids[devn]);
 		    }
 
@@ -457,7 +465,7 @@ if(platform == 'linux') {
 		var udevlist = udev.list();
 		if(options.verbose) {
 			logHotplugInfo("list from udev ------------>");
-			logHotplugInfo(util.inspect(udevlist));			
+			logHotplugInfo(util.inspect(udevlist));
 			logHotplugInfo("<---------------------------");
 		}
 
@@ -466,11 +474,11 @@ if(platform == 'linux') {
 			var device = udevlist[N];
 
 			for(var s=0;s<sortedFields.length;s++) {
-	//	    	logHotplugInfo("signature: " + util.inspect(device));
-	//	        logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
+		    	//logHotplugInfo("signature: " + util.inspect(device));
+		        //logHotplugInfo("relevant field " + sortedFields[s][0] + " = " + device[sortedFields[s][0]]);
 	            path.push([sortedFields[s][0],device[sortedFields[s][0]]]);
 	        }
-   	        //	logHotplugInfo("items for new fields: " + util.inspect(path));
+   	        // logHotplugInfo("items for new fields: " + util.inspect(path));
 
    	        var ret = signatureTree.lookup(path);
    	        if(ret) {
@@ -511,7 +519,6 @@ if(platform == 'linux') {
    	        		logHotplugError("WARN: onSeen() for device returned a " + (typeof uuid));
    	        	}
    	        }
-
    	    }
 
 	}
@@ -545,7 +552,7 @@ if(platform == 'linux') {
 /**
  * lets you overrid behavior for when a device is considered new. THis is good if you have your own
  * backend device instantiation system.
- * @param  {Function} cb 
+ * @param  {Function} cb
  *
  * onNew(hotplugdef,device,uuid,platform) { }
  *
