@@ -52,7 +52,7 @@ private:
     }
 
     static void on_handle_event(uv_poll_t* handle, int status, int events) {
-        GLOG_DEBUG("on_handle_event");
+        //GLOG_DEBUG("on_handle_event");
 
         auto isolate = Isolate::GetCurrent();
         HandleScope scope(isolate);
@@ -72,7 +72,7 @@ private:
         v8::Local<v8::Value> emitArgs[2];
         emitArgs[0] = Nan::New(udev_device_get_action(dev)).ToLocalChecked();
         emitArgs[1] = obj;
-        GLOG_DEBUG("action = %s", udev_device_get_action(dev));
+        //("action = %s", udev_device_get_action(dev));
         wrapper->emit.Call(Nan::New(data->monitor), 2, emitArgs);
 
         udev_device_unref(dev);
@@ -80,7 +80,7 @@ private:
     };
 
     static NAN_METHOD(New) {
-        GLOG_DEBUG("New");
+        //GLOG_DEBUG("New");
         uv_poll_t* handle;
         Monitor* obj = new Monitor();
         obj->mon = udev_monitor_new_from_netlink(udev, "udev");
@@ -153,7 +153,7 @@ static NAN_METHOD(List) {
 static void InitAll(Handle<Object> exports, Handle<Object> module) {
     INIT_GLOG;
 
-    GLOG_DEBUG("Init");
+    //GLOG_DEBUG("Init");
     udev = udev_new();
     if (!udev) {
         Nan::ThrowError(Nan::New("Can't create udev\n").ToLocalChecked());
