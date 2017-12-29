@@ -1,8 +1,7 @@
 #include <v8.h>
-#include <node.h>
-#include "grease_client.h"
-#include "nan.h"
+#include <nan.h>
 
+#include "grease_client.h"
 #include <libudev.h>
 
 using namespace v8;
@@ -18,111 +17,121 @@ static void PushProperties(Local<Object> obj, struct udev_device* dev) {
         name = udev_list_entry_get_name(entry);
         value = udev_list_entry_get_value(entry);
         if (value != NULL) {
-            obj->Set(Nan::New(name).ToLocalChecked(), Nan::New(value).ToLocalChecked());
+            obj->Set(Nan::New<String>(name).ToLocalChecked(), Nan::New<String>(value).ToLocalChecked());
         } else {
-            obj->Set(Nan::New(name).ToLocalChecked(), Nan::Null());
+            obj->Set(Nan::New<String>(name).ToLocalChecked(), Nan::Null());
         }
     }
 }
 
-class Monitor : public Nan::ObjectWrap {
+static void PushSystemAttributes(Local<Object> obj, struct udev_device* dev) {
+    struct udev_list_entry* sysattrs;
+    struct udev_list_entry* entry;
+    sysattrs = udev_device_get_sysattr_list_entry(dev);
+    udev_list_entry_foreach(entry, sysattrs) {
+        const char *name, *value;
+        name = udev_list_entry_get_name(entry);
+        value = udev_device_get_sysattr_value(dev, name);
+        if (value != NULL) {
+            obj->Set(Nan::New<String>(name).ToLocalChecked(), Nan::New<String>(value).ToLocalChecked());
+        } else {
+            obj->Set(Nan::New<String>(name).ToLocalChecked(), Nan::Null());
+        }
+    }
+}
+
+class Monitor : public node::ObjectWrap {
     struct poll_struct {
-        Nan::Persistent<v8::Object> monitor;
-    };
-public:
-    static Nan::Persistent<Function> constructor;
-
-    static void Init() {
-        Local<FunctionTemplate> tpl = Nan::New<v8::FunctionTemplate>(New);
-        tpl->SetClassName(Nan::New("Monitor").ToLocalChecked());
-        tpl->InstanceTemplate()->SetInternalFieldCount(1);
-
-        tpl->PrototypeTemplate()->Set(Nan::New("close").ToLocalChecked(),
-            Nan::New<v8::FunctionTemplate>(Close)->GetFunction());
-
-        constructor.Reset(tpl->GetFunction());
+      Nan::Persistent<Object> monitor;
     };
 
-private:
+    uv_poll_t* poll_handle;
+    udev_monitor* mon;
+    int fd;
+
+    static void on_handle_event(uv_poll_t* handle, int status, int events) {
+        Nan::HandleScope scope;
+        poll_struct* data = (poll_struct*)handle->data;
+        Local<Object> monitor = Nan::New(data->monitor);
+        Monitor* wrapper = ObjectWrap::Unwrap<Monitor>(monitor);
+        udev_device* dev = udev_monitor_receive_device(wrapper->mon);
+
+        Local<Object> obj = Nan::New<Object>();
+        obj->Set(Nan::New<String>("syspath").ToLocalChecked(), Nan::New<String>(udev_device_get_syspath(dev)).ToLocalChecked());
+        PushProperties(obj, dev);
+
+        Local<Function> emit = monitor->Get(Nan::New<String>("emit").ToLocalChecked()).As<Function>();
+        Local<Value> emitArgs[2];
+        emitArgs[0] = Nan::New<String>(udev_device_get_action(dev)).ToLocalChecked();
+        emitArgs[1] = obj;
+        emit->Call(monitor, 2, emitArgs);
+
+        udev_device_unref(dev);
+    };
+
+    static NAN_METHOD(New) {
+        Nan::HandleScope scope;
+        uv_poll_t* handle;
+        Monitor* obj = new Monitor();
+        obj->Wrap(info.This());
+        obj->mon = udev_monitor_new_from_netlink(udev, "udev");
+        obj->fd = udev_monitor_get_fd(obj->mon);
+        obj->poll_handle = handle = new uv_poll_t;
+        udev_monitor_enable_receiving(obj->mon);
+        poll_struct* data = new poll_struct;
+        //NanAssignPersistent(data->monitor, info.This());
+        data->monitor.Reset(info.This());
+        handle->data = data;
+        uv_poll_init(uv_default_loop(), obj->poll_handle, obj->fd);
+        uv_poll_start(obj->poll_handle, UV_READABLE, on_handle_event);
+        //NanReturnThis();
+        return;
+    }
+
     static void on_handle_close(uv_handle_t *handle) {
         poll_struct* data = (poll_struct*)handle->data;
+        //NanDisposePersistent(data->monitor);
         data->monitor.Reset();
         delete data;
         delete handle;
     }
 
-    static void on_handle_event(uv_poll_t* handle, int status, int events) {
-        //GLOG_DEBUG("on_handle_event");
-
-        auto isolate = Isolate::GetCurrent();
-        HandleScope scope(isolate);
-
-        poll_struct* data = (poll_struct*)handle->data;
-
-        Monitor* wrapper = Nan::ObjectWrap::Unwrap<Monitor>(Nan::New(data->monitor));
-        udev_device* dev = udev_monitor_receive_device(wrapper->mon);
-
-        Local<Object> obj = Nan::New<v8::Object>();
-        Nan::Set(obj, Nan::New("syspath").ToLocalChecked(), 
-            Nan::New(udev_device_get_syspath(dev)).ToLocalChecked());
-        PushProperties(obj, dev);
-
-        Nan::TryCatch tc;
-
-        v8::Local<v8::Value> emitArgs[2];
-        emitArgs[0] = Nan::New(udev_device_get_action(dev)).ToLocalChecked();
-        emitArgs[1] = obj;
-        //("action = %s", udev_device_get_action(dev));
-        wrapper->emit.Call(Nan::New(data->monitor), 2, emitArgs);
-
-        udev_device_unref(dev);
-        if (tc.HasCaught()) Nan::FatalException(tc);
-    };
-
-    static NAN_METHOD(New) {
-        //GLOG_DEBUG("New");
-        uv_poll_t* handle;
-        Monitor* obj = new Monitor();
-        obj->mon = udev_monitor_new_from_netlink(udev, "udev");
-        udev_monitor_enable_receiving(obj->mon);
-        obj->fd = udev_monitor_get_fd(obj->mon);
-        obj->poll_handle = handle = new uv_poll_t;
-        obj->Wrap(info.This());
-
-        try {
-            Local<Value> emit_v = info.This()->Get(Nan::New("emit").ToLocalChecked());
-            obj->emit.SetFunction(v8::Local<v8::Function>::Cast(emit_v));
-        } catch(std::exception &e) {
-            Nan::ThrowTypeError("No emit function available on udev prototype");
-        }
-
-        poll_struct* data = new poll_struct;
-        data->monitor.Reset(info.This());
-        handle->data = data;
-        uv_poll_init(uv_default_loop(), obj->poll_handle, obj->fd);
-        uv_poll_start(obj->poll_handle, UV_READABLE, on_handle_event);
-        return info.GetReturnValue().Set(info.This());
-    };
-
     static NAN_METHOD(Close) {
-        Monitor* obj = Nan::ObjectWrap::Unwrap<Monitor>(info.This());
+        Nan::HandleScope scope;
+        Monitor* obj = ObjectWrap::Unwrap<Monitor>(info.This());
         uv_poll_stop(obj->poll_handle);
         uv_close((uv_handle_t*)obj->poll_handle, on_handle_close);
         udev_monitor_unref(obj->mon);
-    };
+        return;
+    }
 
-private:
-    uv_poll_t* poll_handle;
-    udev_monitor* mon;
-    int fd;
-    Nan::Callback emit;
+    public:
+    static void Init(Handle<Object> target) {
+        // I do not remember why the functiontemplate was tugged into a persistent.
+        static Nan::Persistent<FunctionTemplate> constructor;
+
+        //Local<FunctionTemplate> tpl = Nan::New<FunctionTemplate>(New);
+        Local<v8::FunctionTemplate> tpl = Nan::New<v8::FunctionTemplate>(New);
+        tpl->SetClassName(Nan::New<String>("Monitor").ToLocalChecked());
+        tpl->InstanceTemplate()->SetInternalFieldCount(1);
+        //NODE_SET_PROTOTYPE_METHOD(tpl, "close", Close);
+        Nan::SetPrototypeMethod(tpl, "close", Close);
+        //NanAssignPersistent(constructor, tpl);
+        constructor.Reset(tpl);
+
+        //target->Set(
+        Nan::Set(
+            target,
+            Nan::New<String>("Monitor").ToLocalChecked(), 
+            Nan::GetFunction(tpl).ToLocalChecked()
+        );
+    }
 };
 
-Nan::Persistent<Function> Monitor::constructor;
-
-static NAN_METHOD(List) {
+NAN_METHOD(List) {
+    Nan::HandleScope scope;
+    //NanScope();
     Local<Array> list = Nan::New<Array>();
-
     struct udev_enumerate* enumerate;
     struct udev_list_entry* devices;
     struct udev_list_entry* entry;
@@ -130,6 +139,10 @@ static NAN_METHOD(List) {
 
     enumerate = udev_enumerate_new(udev);
     // add match etc. stuff.
+    if(info[0]->IsString()) {
+        v8::Local<v8::String> subsystem = info[0]->ToString();
+        udev_enumerate_add_match_subsystem(enumerate, *Nan::Utf8String(subsystem));
+    }
     udev_enumerate_scan_devices(enumerate);
     devices = udev_enumerate_get_list_entry(enumerate);
 
@@ -140,31 +153,115 @@ static NAN_METHOD(List) {
         dev = udev_device_new_from_syspath(udev, path);
         Local<Object> obj = Nan::New<Object>();
         PushProperties(obj, dev);
-        obj->Set(Nan::New("syspath").ToLocalChecked(), Nan::New(path).ToLocalChecked());
-        list->Set(i++, obj);
+
+        //obj->Set(
+        Nan::Set(
+            obj,
+            Nan::New<String>("syspath").ToLocalChecked(), 
+            Nan::New<String>(path).ToLocalChecked()
+        );
+
+        //list->Set(i++, obj);
+        Nan::Set(list, i++, obj);
         udev_device_unref(dev);
     }
 
     udev_enumerate_unref(enumerate);
-
+    //NanReturnValue(list);
     info.GetReturnValue().Set(list);
 }
 
-static void InitAll(Handle<Object> exports, Handle<Object> module) {
-    INIT_GLOG;
+NAN_METHOD(GetNodeParentBySyspath) {
+    Nan::HandleScope scope;
+    //NanScope();
+    struct udev_device *dev;
+    struct udev_device *parentDev;
 
-    //GLOG_DEBUG("Init");
-    udev = udev_new();
-    if (!udev) {
-        Nan::ThrowError(Nan::New("Can't create udev\n").ToLocalChecked());
+    if(!info[0]->IsString()) {
+        Nan::ThrowTypeError("first argument must be a string");
     }
 
-    Monitor::Init();
+    v8::Local<v8::String> string = info[0]->ToString();
 
-    Nan::Set(exports, Nan::New("Monitor").ToLocalChecked(), 
-        Nan::New(Monitor::constructor));
+    dev = udev_device_new_from_syspath(udev, *Nan::Utf8String(string));
+    if (dev == NULL) {
+        Nan::ThrowError("device not found");
+    }
+    parentDev = udev_device_get_parent(dev);
+    if(parentDev == NULL) {
+        udev_device_unref(dev);
+    }
 
-    Nan::Set(exports, Nan::New("list").ToLocalChecked(), 
-        Nan::GetFunction(Nan::New<FunctionTemplate>(List)).ToLocalChecked());
+    Local<Object> obj = Nan::New<Object>();
+    PushProperties(obj, parentDev);
+    const char *path;
+    path = udev_device_get_syspath(parentDev);
+
+    //obj->Set(
+    Nan::Set(
+        obj,
+        Nan::New<String>("syspath").ToLocalChecked(), 
+        Nan::New<String>(path).ToLocalChecked()
+    );
+
+    udev_device_unref(dev);
+
+    //NanReturnValue(obj);
+    info.GetReturnValue().Set(obj);
 }
-NODE_MODULE(udev, InitAll)
+
+NAN_METHOD(GetSysattrBySyspath) {
+    Nan::HandleScope scope;
+    //NanScope();
+    struct udev_device *dev;
+
+    if(!info[0]->IsString()) {
+      Nan::ThrowTypeError("first argument must be a string");
+        //NanReturnNull();
+    }
+
+    v8::Local<v8::String> string = info[0]->ToString();
+
+    dev = udev_device_new_from_syspath(udev, *Nan::Utf8String(string));
+    if (dev == NULL) {
+      Nan::ThrowError("device not found");
+    }
+
+    Local<Object> obj = Nan::New<Object>();
+    PushSystemAttributes(obj, dev);
+    obj->Set(Nan::New<String>("syspath").ToLocalChecked(), string);
+    udev_device_unref(dev);
+
+    //NanReturnValue(obj);
+    info.GetReturnValue().Set(obj);
+}
+
+static void Init(Handle<Object> target) {
+    INIT_GLOG;
+    udev = udev_new();
+
+    if (!udev) {
+      Nan::ThrowError("Can't create udev\n");
+    }
+
+    Nan::Set(
+        target,
+        Nan::New<String>("list").ToLocalChecked(),
+        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(List)).ToLocalChecked()
+    );
+    Nan::Set(
+        target,
+        Nan::New<String>("getNodeParentBySyspath").ToLocalChecked(),
+        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(GetNodeParentBySyspath)).ToLocalChecked()
+    );
+    //target->Set(
+    Nan::Set(
+        target,
+        Nan::New<String>("getSysattrBySyspath").ToLocalChecked(),
+        //Nan::New<FunctionTemplate>(GetSysattrBySyspath)->GetFunction());
+        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(GetSysattrBySyspath)).ToLocalChecked()
+    );
+
+    Monitor::Init(target);
+}
+NODE_MODULE(udev, Init)

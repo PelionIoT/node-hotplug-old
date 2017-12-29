@@ -23,7 +23,7 @@
   "gypfile": true,
   "readmeFilename": "README.md",
   "dependencies": {
-    "node-uuid": "~1.4.1",
-    "nan": "^2.1.0"
+    "node-uuid": "*",
+    "nan": "*"
   }
 }
